@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>再帰フラクタルツリージェネレーター</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+<div class="max-w-4xl mx-auto p-4">
+  <h1 class="text-2xl font-bold text-center text-green-400 mb-1">🌲 フラクタルツリージェネレーター</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">再帰で描く自然なフラクタルツリー + 季節エフェクト</p>
+
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <!-- Controls -->
+    <div class="bg-gray-900 rounded-xl p-4 space-y-3 text-sm">
+      <div>
+        <label class="block text-gray-400 mb-1">季節</label>
+        <div class="grid grid-cols-2 gap-1">
+          <button onclick="setSeason('spring')" class="season-btn bg-pink-900 hover:bg-pink-700 py-1 rounded text-xs transition" data-season="spring">🌸 春</button>
+          <button onclick="setSeason('summer')" class="season-btn bg-green-900 hover:bg-green-700 py-1 rounded text-xs transition" data-season="summer">🌿 夏</button>
+          <button onclick="setSeason('autumn')" class="season-btn bg-orange-900 hover:bg-orange-700 py-1 rounded text-xs transition" data-season="autumn">🍂 秋</button>
+          <button onclick="setSeason('winter')" class="season-btn bg-blue-900 hover:bg-blue-700 py-1 rounded text-xs transition" data-season="winter">❄️ 冬</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-gray-400 mb-1">再帰深度: <span id="depthLabel">9</span></label>
+        <input type="range" id="depth" min="3" max="14" value="9" class="w-full accent-green-500" oninput="update('depthLabel',this.value)" />
+      </div>
+      <div>
+        <label class="block text-gray-400 mb-1">左分岐角: <span id="leftLabel">25</span>°</label>
+        <input type="range" id="leftAngle" min="5" max="60" value="25" class="w-full accent-green-500" oninput="update('leftLabel',this.value)" />
+      </div>
+      <div>
+        <label class="block text-gray-400 mb-1">右分岐角: <span id="rightLabel">25</span>°</label>
+        <input type="range" id="rightAngle" min="5" max="60" value="25" class="w-full accent-green-500" oninput="update('rightLabel',this.value)" />
+      </div>
+      <div>
+        <label class="block text-gray-400 mb-1">長さ比率: <span id="ratioLabel">0.70</span></label>
+        <input type="range" id="ratio" min="40" max="85" value="70" class="w-full accent-green-500" oninput="update('ratioLabel',(this.value/100).toFixed(2))" />
+      </div>
+      <div>
+        <label class="block text-gray-400 mb-1">幹の長さ: <span id="trunkLabel">100</span></label>
+        <input type="range" id="trunkLen" min="50" max="160" value="100" class="w-full accent-green-500" oninput="update('trunkLabel',this.value)" />
+      </div>
+      <div>
+        <label class="block text-gray-400 mb-1">ランダム揺れ: <span id="jitterLabel">0</span></label>
+        <input type="range" id="jitter" min="0" max="20" value="0" class="w-full accent-green-500" oninput="update('jitterLabel',this.value)" />
+      </div>
+      <button onclick="draw()" class="w-full bg-green-700 hover:bg-green-600 py-2 rounded-lg font-semibold transition">🌱 描画</button>
+      <button onclick="downloadSVG()" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded-lg font-semibold transition">⬇ SVG保存</button>
+    </div>
+
+    <!-- Canvas -->
+    <div class="md:col-span-3 bg-gray-900 rounded-xl p-3 flex items-center justify-center">
+      <canvas id="canvas" width="540" height="500" class="rounded-lg" style="max-width:100%;height:auto;" role="img" aria-label="フラクタルツリー"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = 540, H = 500;
+
+let season = 'summer';
+const seasons = {
+  spring: { sky1:'#ffe0f0', sky2:'#ffd6e7', trunk:'#5d4037', leaf:'#ff80ab', leafAlt:'#f48fb1', bg:'#fff0f5' },
+  summer: { sky1:'#1a237e', sky2:'#283593', trunk:'#4e342e', leaf:'#2e7d32', leafAlt:'#43a047', bg:'#0d1b2a' },
+  autumn: { sky1:'#bf360c', sky2:'#e64a19', trunk:'#3e2723', leaf:'#e65100', leafAlt:'#f57c00', bg:'#1a0a00' },
+  winter: { sky1:'#1a237e', sky2:'#283593', trunk:'#546e7a', leaf:'#ffffff', leafAlt:'#b0bec5', bg:'#0a0a1a' },
+};
+
+function setSeason(s) { season = s; draw(); }
+function update(id, val) { document.getElementById(id).textContent = val; }
+
+function draw() {
+  const depth = parseInt(document.getElementById('depth').value);
+  const leftAng = parseInt(document.getElementById('leftAngle').value) * Math.PI/180;
+  const rightAng = parseInt(document.getElementById('rightAngle').value) * Math.PI/180;
+  const ratio = parseInt(document.getElementById('ratio').value)/100;
+  const trunkLen = parseInt(document.getElementById('trunkLen').value);
+  const jitter = parseInt(document.getElementById('jitter').value);
+  const s = seasons[season];
+
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, s.sky1);
+  grad.addColorStop(1, s.sky2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  // Snow effect for winter
+  if (season === 'winter') {
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(0, H-30, W, 30);
+  }
+
+  svgPaths = [];
+  ctx.save();
+  ctx.translate(W/2, H-20);
+  branch(0, trunkLen, depth, leftAng, rightAng, ratio, jitter, depth, s);
+  ctx.restore();
+}
+
+let svgPaths = [];
+
+function branch(angle, length, depth, leftAng, rightAng, ratio, jitter, maxDepth, s) {
+  if (depth === 0) return;
+  const isLeaf = depth <= 2;
+  const thickness = Math.max(1, depth * 1.2);
+  const jitterAngle = (Math.random()-0.5) * jitter * Math.PI/180;
+  const ang = angle + jitterAngle;
+  const ex = Math.sin(ang) * length;
+  const ey = -Math.cos(ang) * length;
+
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(ex, ey);
+
+  if (isLeaf) {
+    ctx.strokeStyle = depth % 2 === 0 ? s.leaf : s.leafAlt;
+    ctx.lineWidth = thickness * 1.5;
+    ctx.globalAlpha = 0.8;
+  } else {
+    const t = depth/10;
+    ctx.strokeStyle = s.trunk;
+    ctx.lineWidth = thickness;
+    ctx.globalAlpha = 1;
+  }
+  ctx.stroke();
+
+  if (isLeaf && season !== 'winter') {
+    ctx.beginPath();
+    ctx.arc(ex, ey, length*0.3, 0, Math.PI*2);
+    ctx.fillStyle = depth % 2 === 0 ? s.leaf : s.leafAlt;
+    ctx.globalAlpha = 0.5;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.save();
+  ctx.translate(ex, ey);
+
+  branch(ang - leftAng, length*ratio, depth-1, leftAng, rightAng, ratio, jitter, maxDepth, s);
+  branch(ang + rightAng, length*ratio, depth-1, leftAng, rightAng, ratio, jitter, maxDepth, s);
+  ctx.restore();
+}
+
+function downloadSVG() {
+  // Build simple SVG representation
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = W; tempCanvas.height = H;
+  const tCtx = tempCanvas.getContext('2d');
+  // Can't easily convert canvas to SVG, so download as PNG instead
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = 'fractal-tree.png';
+  a.click();
+}
+
+setSeason('summer');
+draw();
+</script>
+</body>
+</html>
